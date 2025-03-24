@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 )
 
@@ -19,7 +20,7 @@ func main() {
 		job(MultiHash),
 		job(CombineResults),
 		job(func(in, out chan interface{}) {
-			dataRaw := <-in
+			dataRaw, ok := <-in
 			data, ok := dataRaw.(string)
 			if !ok {
 				fmt.Println("cant convert result data to string")
@@ -68,12 +69,16 @@ func ExecutePipeline(jobs ...job) {
 
 func SingleHash(in, out chan interface{}) {
 	mu := &sync.Mutex{}
+	wg := sync.WaitGroup{}
 	for dataRaw := range in {
+		wg.Add(1)
 		go func() {
-			data, ok := dataRaw.(string)
+			defer wg.Done()
+			_, ok := dataRaw.(int)
 			if !ok {
 				fmt.Println("dataRaw is not a string, SingleHash")
 			}
+			data := strconv.Itoa(dataRaw.(int))
 
 			crcChan1 := make(chan string)
 			crcChan2 := make(chan string)
@@ -88,17 +93,19 @@ func SingleHash(in, out chan interface{}) {
 			}()
 			crc1 := <-crcChan1
 			crc2 := <-crcChan2
-			out <- data
+			fmt.Println(crc1 + "~" + crc2)
 			out <- crc1 + "~" + crc2
 		}()
-
 	}
+	wg.Wait()
 }
 
 func MultiHash(in, out chan interface{}) {
+	wg := sync.WaitGroup{}
 	for dataRaw := range in {
-		singleHashData := <-in
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			wg := &sync.WaitGroup{}
 			wg.Add(6)
 			data, ok := dataRaw.(string)
@@ -109,7 +116,7 @@ func MultiHash(in, out chan interface{}) {
 			for i := 0; i < 6; i++ {
 				go func() {
 					defer wg.Done()
-					resHashs[i] = DataSignerCrc32(string(rune(i)) + data)
+					resHashs[i] = DataSignerCrc32(strconv.Itoa(i) + data)
 				}()
 			}
 			wg.Wait()
@@ -118,25 +125,24 @@ func MultiHash(in, out chan interface{}) {
 			for _, hash := range resHashs {
 				res += hash
 			}
-			out <- singleHashData
 			out <- res
 		}()
 	}
+	wg.Wait()
 }
 
 func CombineResults(in, out chan interface{}) {
+	var res string
 	for dataRow1 := range in {
-		dataRow2 := <-out
-		singleHashData, ok := dataRow1.(string)
+		data, ok := dataRow1.(string)
 		if !ok {
 			fmt.Println("dataRow1 is not a string, CombineResults")
 		}
-		multiHashData, ok := dataRow2.(string)
-		if !ok {
-			fmt.Println("dataRow2 is not a string, CombineResults")
+
+		if res != "" {
+			res += "_"
 		}
-
-		out <- singleHashData + multiHashData
+		res += data
 	}
-
+	out <- res
 }
