@@ -2,35 +2,10 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"sync"
 )
-
-func main() {
-
-	inputData := []int{0, 1}
-
-	hashSignJobs := []job{
-		job(func(in, out chan interface{}) {
-			for _, fibNum := range inputData {
-				out <- fibNum
-			}
-		}),
-		job(SingleHash),
-		job(MultiHash),
-		job(CombineResults),
-		job(func(in, out chan interface{}) {
-			dataRaw, ok := <-in
-			data, ok := dataRaw.(string)
-			if !ok {
-				fmt.Println("cant convert result data to string")
-			}
-			fmt.Println(data)
-		}),
-	}
-
-	ExecutePipeline(hashSignJobs...)
-}
 
 func ExecutePipeline(jobs ...job) {
 
@@ -93,11 +68,11 @@ func SingleHash(in, out chan interface{}) {
 			}()
 			crc1 := <-crcChan1
 			crc2 := <-crcChan2
-			fmt.Println(crc1 + "~" + crc2)
 			out <- crc1 + "~" + crc2
 		}()
 	}
 	wg.Wait()
+
 }
 
 func MultiHash(in, out chan interface{}) {
@@ -129,20 +104,26 @@ func MultiHash(in, out chan interface{}) {
 		}()
 	}
 	wg.Wait()
+
 }
 
 func CombineResults(in, out chan interface{}) {
-	var res string
+	results := make([]string, 0, 10)
 	for dataRow1 := range in {
 		data, ok := dataRow1.(string)
 		if !ok {
 			fmt.Println("dataRow1 is not a string, CombineResults")
 		}
-
-		if res != "" {
+		results = append(results, data)
+	}
+	var res string
+	sort.Strings(results)
+	for i, hash := range results {
+		res += hash
+		if i != len(results)-1 {
 			res += "_"
 		}
-		res += data
+
 	}
 	out <- res
 }
